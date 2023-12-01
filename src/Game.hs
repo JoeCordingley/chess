@@ -1,12 +1,11 @@
 {-# LANGUAGE NoImplicitPrelude #-}
+{-# LANGUAGE TupleSections #-}
 module Game
-  ( start,
-  )
 where
 
 import qualified Data.Map as Map
+import Data.Map (Map, (!))
 import Relude
-
 
 data Player
   = White
@@ -49,26 +48,25 @@ type Space = (File, Rank)
 
 data File
   = A
-  deriving (Eq, Ord)
-
---  | B
---  | C
---  | D
---  | E
---  | F
---  | G
---  | H
+  | B
+  | C
+  | D
+  | E
+  | F
+  | G
+  | H
+  deriving (Eq, Ord, Enum, Bounded, Show)
 
 data Rank
   = One
-  deriving (Eq, Ord)
---  | Two
---  | Three
---  | Four
---  | Five
---  | Six
---  | Seven
---  | Eight
+  | Two
+  | Three
+  | Four
+  | Five
+  | Six
+  | Seven
+  | Eight
+  deriving (Eq, Ord, Enum, Bounded, Show)
 
 data Move
 
@@ -125,7 +123,19 @@ pawnAttacks :: Player -> Space -> [Space]
 pawnAttacks = undefined
 
 knightMoves :: Space -> [Space]
-knightMoves = undefined
+knightMoves space = filter (knightMove space) spaces where
+  knightMove (f1, r1) (f2, r2) = diffTuple == (1, 2) || diffTuple == (2, 1) where
+    diffTuple = (f1 `diff` f2, r1 `diff` r2) where
+      diff x y = abs $ fromEnum x - fromEnum y
+
+spaces :: [Space]
+spaces = (,) <$> files <*> ranks
+
+ranks :: [Rank]
+ranks = [One, Two, Three, Four, Five, Six, Seven, Eight]
+
+files :: [File]
+files = [A, B, C, D, E, F, G, H]
 
 bishopLines :: Space -> [[Space]]
 bishopLines = undefined
@@ -134,7 +144,16 @@ queenLines :: Space -> [[Space]]
 queenLines space = bishopLines space ++ rookLines space
 
 rookLines :: Space -> [[Space]]
-rookLines = undefined
+rookLines space = map (lineExtendingFrom space) orthogonalDirections where
+  lineExtendingFrom (f, r) (fd, rd) = lextendingFrom f fd `zip` lextendingFrom r rd
+  orthogonalDirections = map (,EQ) ltgt ++ map (EQ,) ltgt where
+    ltgt = [LT, GT]
+
+lextendingFrom :: (Enum a, Bounded a) => a -> Ordering -> [a]
+lextendingFrom a GT = [a..]
+lextendingFrom a LT = map toEnum [i, i - 1 .. (fromEnum (maxBound `asTypeOf` a))] where
+  i = fromEnum a
+lextendingFrom a EQ = repeat a
 
 kingMoves :: Space -> [Space]
 kingMoves = undefined
