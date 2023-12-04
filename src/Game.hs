@@ -1,9 +1,11 @@
 {-# LANGUAGE NoImplicitPrelude #-}
 {-# LANGUAGE TupleSections #-}
+
 module Game
 where
 
 import qualified Data.Map as Map
+import Data.List (singleton)
 import Data.Map (Map, (!))
 import Relude
 
@@ -68,9 +70,11 @@ data Rank
   | Eight
   deriving (Eq, Ord, Enum, Bounded, Show)
 
-data Move
+data Move = AttackingMove AttackingMoveData | NonAttackingMove NonAttackingMoveData
 
-data AttackingMove = AttackingMove {pieceUnderAttack :: PieceType }
+data NonAttackingMoveData = NonAttackingMoveData
+
+data AttackingMoveData = AttackingMoveData {pieceUnderAttack :: PieceType }
 
 startingBoard :: Board
 startingBoard = undefined
@@ -103,60 +107,86 @@ postMoveStatus player board = case finishedStatus of
         noLegalMoves = null $ legalMoves (other player) board
         kingIsUnderAttack = King `elem` piecesUnderAttack 
           where
-            piecesUnderAttack = pieceUnderAttack <$> attackingMoves where
-              attackingMoves = pieces player board >>= uncurry linesOfAttack >>= (maybeToList . attackingMoveOnBoard) where
-                attackingMoveOnBoard spaces = AttackingMove <$> (firstJust (pieceAt board) spaces >>= enemyPiece player)
+            piecesUnderAttack = pieceUnderAttack <$> attackingMoves player board where
               
 legalMoves :: Player -> Board -> [Move]
-legalMoves = undefined
+legalMoves player board = (map AttackingMove (attackingMoves player board) ++ map NonAttackingMove (nonAttackingMoves player board)) 
+
+nonAttackingMoves :: Player -> Board -> [NonAttackingMoveData]
+nonAttackingMoves player board = pieces player board >>= uncurry linesOfMovement >>= nonAttackingMovementOnBoard where
+  nonAttackingMovementOnBoard spaces = NonAttackingMoveData <$ takeWhile unoccupied spaces
+  unoccupied space = isNothing $ pieceAt board space
+
+linesOfMovement :: Piece -> Space -> [[Space]]
+linesOfMovement (Piece player pieceType) = case pieceType of
+  Pawn -> singleton . pawnLine player
+  Knight -> map singleton . knightMoves
+  Bishop -> bishopLines
+  Rook -> rookLines
+  King -> map singleton . kingMoves
+  Queen -> queenLines
+
+attackingMoves player board = pieces player board >>= uncurry linesOfAttack >>= (maybeToList . attackingMoveOnBoard) where
+  attackingMoveOnBoard spaces = AttackingMoveData <$> (firstJust (pieceAt board) spaces >>= enemyPiece player)
 
 linesOfAttack :: Piece -> Space -> [[Space]]
-linesOfAttack (Piece player pieceType) = case pieceType of
-   Pawn -> map (:[]) . pawnAttacks player
-   Knight -> map (:[]) . knightMoves
-   Bishop -> bishopLines
-   Rook -> rookLines
-   King -> map (:[]) . kingMoves
-   Queen -> queenLines
+linesOfAttack (Piece player Pawn) = map singleton . pawnAttacks player
+linesOfAttack piece = linesOfMovement piece
+
+pawnLine :: Player -> Space -> [Space]
+pawnLine White (file, Two) = map (file,) [Three, Four]
+pawnLine White (file, rank) = [(file, succ rank)]
+pawnLine Black (file, Seven) = map (file,) [Six, Five]
+pawnLine Black (file, rank) = [(file, pred rank)]
 
 pawnAttacks :: Player -> Space -> [Space]
-pawnAttacks = undefined
+pawnAttacks player space = filter (pawnAttack space) allSpaces where
+  pawnAttack (f1, r1) (f2, r2) = movementIsOneForward && movementIsOneToTheSide where
+    movementIsOneForward = (rankDiff == 1 && player == White) || (rankDiff == -1 && player == Black) where
+      rankDiff = fromEnum r2 - fromEnum r1
+    movementIsOneToTheSide = absFileDiff == 1 where
+      absFileDiff = abs $ fromEnum f2 - fromEnum f1
 
 knightMoves :: Space -> [Space]
-knightMoves space = filter (knightMove space) spaces where
-  knightMove (f1, r1) (f2, r2) = diffTuple == (1, 2) || diffTuple == (2, 1) where
-    diffTuple = (f1 `diff` f2, r1 `diff` r2) where
-      diff x y = abs $ fromEnum x - fromEnum y
+knightMoves space = filter (knightMove space) allSpaces where
+  knightMove x y = distances' == (1, 2) || distances' == (2, 1) where
+    distances' = distances x y
 
-spaces :: [Space]
-spaces = (,) <$> files <*> ranks
-
-ranks :: [Rank]
-ranks = [One, Two, Three, Four, Five, Six, Seven, Eight]
-
-files :: [File]
-files = [A, B, C, D, E, F, G, H]
+distances (f1, r1) (f2, r2) = (f1 `distance` f2, r1 `distance` r2) where
+  distance x y = abs $ fromEnum x - fromEnum y
 
 bishopLines :: Space -> [[Space]]
-bishopLines = undefined
+bishopLines space = map (lineExtendingFrom space) diagonalDirections where
+  diagonalDirections = (,) <$> np <*> np
 
 queenLines :: Space -> [[Space]]
 queenLines space = bishopLines space ++ rookLines space
 
 rookLines :: Space -> [[Space]]
 rookLines space = map (lineExtendingFrom space) orthogonalDirections where
-  lineExtendingFrom (f, r) (fd, rd) = lextendingFrom f fd `zip` lextendingFrom r rd
-  orthogonalDirections = map (,EQ) ltgt ++ map (EQ,) ltgt where
-    ltgt = [LT, GT]
-
-lextendingFrom :: (Enum a, Bounded a) => a -> Ordering -> [a]
-lextendingFrom a GT = [a..]
-lextendingFrom a LT = map toEnum [i, i - 1 .. (fromEnum (maxBound `asTypeOf` a))] where
-  i = fromEnum a
-lextendingFrom a EQ = repeat a
+  orthogonalDirections = map (,0) np ++ map (0,) np 
 
 kingMoves :: Space -> [Space]
-kingMoves = undefined
+kingMoves space = filter (kingMove space) allSpaces where
+  kingMove x y = uncurry max (distances x y) == 1 
+
+lineExtendingFrom :: Space -> (Int, Int) -> [Space]
+lineExtendingFrom (file, rank) (fileIncrement, rankIncrement) = enumFromByIncrement file fileIncrement `zip` enumFromByIncrement rank rankIncrement
+
+np = [-1, 1]
+
+enumFromByIncrement :: (Enum a, Bounded a) => a -> Int -> [a]
+enumFromByIncrement a p = map toEnum [i, i + p .. (fromEnum (maxBound `asTypeOf` a))] where
+  i = fromEnum a
+
+allSpaces :: [Space]
+allSpaces = (,) <$> files <*> ranks
+
+ranks :: [Rank]
+ranks = [One, Two, Three, Four, Five, Six, Seven, Eight]
+
+files :: [File]
+files = [A, B, C, D, E, F, G, H]
 
 pieces :: Player -> Board -> [(Piece, Space)]
 pieces = undefined
@@ -174,20 +204,19 @@ enemyPiece player (Piece otherPlayer pieceType)
   | otherwise = Nothing
 
 applyMove :: Board -> Move -> Board
-applyMove = undefined
-
+applyMove board (NonAttackingMove values) = undefined
+applyMove board (AttackingMove values) = undefined
 
 play :: Monad f => GetMove f -> f Result
 play getMove = play' White startingBoard where
   play' player board = do
-    newState <- playMove player board
+    newState <- playMove 
     case newState of
       Playing newBoard -> play' (nextPlayer player) newBoard
       Finished result -> return result
-  playMove player board = postMoveStatus player <$> newBoard 
     where
-      newBoard = applyMove board <$> getMove player board
-  nextPlayer = other
+      playMove = postMoveStatus player <$> applyMove board <$> getMove player board
+      nextPlayer = other
 
 firstJust :: (a -> Maybe b) -> [a] -> Maybe b
 firstJust f = getFirst . foldMap (First . f)
