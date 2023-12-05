@@ -1,7 +1,7 @@
 {-# LANGUAGE NoImplicitPrelude #-}
 {-# LANGUAGE TupleSections #-}
 
-module Game
+module Game ()
 where
 
 import qualified Data.Map as Map
@@ -17,6 +17,7 @@ data Player
 data Result
   = Winner Player
   | Draw
+
 
 data Status
   = Playing Board
@@ -72,7 +73,7 @@ data Rank
 
 data Move = AttackingMove AttackingMoveData | NonAttackingMove NonAttackingMoveData
 
-data NonAttackingMoveData = NonAttackingMoveData
+data NonAttackingMoveData = NonAttackingMoveData Space Space
 
 data AttackingMoveData = AttackingMoveData {pieceUnderAttack :: PieceType }
 
@@ -113,9 +114,14 @@ legalMoves :: Player -> Board -> [Move]
 legalMoves player board = (map AttackingMove (attackingMoves player board) ++ map NonAttackingMove (nonAttackingMoves player board)) 
 
 nonAttackingMoves :: Player -> Board -> [NonAttackingMoveData]
-nonAttackingMoves player board = pieces player board >>= uncurry linesOfMovement >>= nonAttackingMovementOnBoard where
-  nonAttackingMovementOnBoard spaces = NonAttackingMoveData <$ takeWhile unoccupied spaces
-  unoccupied space = isNothing $ pieceAt board space
+nonAttackingMoves player board = do 
+  (piece, fromSpace) <- pieces player board 
+  lineOfMovement <- linesOfMovement piece fromSpace
+  toSpace <- nonAttackingMovementOnBoard lineOfMovement
+  return $ NonAttackingMoveData fromSpace toSpace
+  where
+    nonAttackingMovementOnBoard spaces = takeWhile unoccupied spaces
+    unoccupied space = isNothing $ pieceAt board space
 
 linesOfMovement :: Piece -> Space -> [[Space]]
 linesOfMovement (Piece player pieceType) = case pieceType of
@@ -199,8 +205,8 @@ pieceAt :: Board -> Space -> Maybe Piece
 pieceAt board space = Map.lookup space (pieceMap board)
 
 enemyPiece :: Player -> Piece -> Maybe PieceType
-enemyPiece player (Piece otherPlayer pieceType)
-  | otherPlayer == other player = Just pieceType
+enemyPiece ofPlayer (Piece player pieceType)
+  | player == other ofPlayer = Just pieceType
   | otherwise = Nothing
 
 applyMove :: Board -> Move -> Board
@@ -210,13 +216,14 @@ applyMove board (AttackingMove values) = undefined
 play :: Monad f => GetMove f -> f Result
 play getMove = play' White startingBoard where
   play' player board = do
-    newState <- playMove 
+    newState <- playMove player
     case newState of
       Playing newBoard -> play' (nextPlayer player) newBoard
       Finished result -> return result
     where
-      playMove = postMoveStatus player <$> applyMove board <$> getMove player board
+      playMove player = postMoveStatus player <$> applyMove board <$> getMove player board
       nextPlayer = other
 
 firstJust :: (a -> Maybe b) -> [a] -> Maybe b
 firstJust f = getFirst . foldMap (First . f)
+
