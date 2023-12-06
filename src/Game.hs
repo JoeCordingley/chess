@@ -1,12 +1,10 @@
-{-# LANGUAGE NoImplicitPrelude #-}
 {-# LANGUAGE TupleSections #-}
+{-# LANGUAGE NoImplicitPrelude #-}
 
-module Game ()
-where
+module Game where
 
-import qualified Data.Map as Map
 import Data.List (singleton)
-import Data.Map (Map, (!))
+import qualified Data.Map as Map
 import Relude
 
 data Player
@@ -18,9 +16,8 @@ data Result
   = Winner Player
   | Draw
 
-
 data Status
-  = Playing Board
+  = Playing
   | Finished Result
 
 data EndStatus
@@ -30,9 +27,6 @@ data EndStatus
 data Board = Board {pieceMap :: Map Space Piece}
 
 -- = Space -> Maybe Piece
-
-newtype MovesExtendingInASingleDirection 
- = MovesExtendingInASingleDirection [Space]
 
 data Piece
   = Piece Player PieceType
@@ -75,7 +69,7 @@ data Move = AttackingMove AttackingMoveData | NonAttackingMove NonAttackingMoveD
 
 data NonAttackingMoveData = NonAttackingMoveData Space Space
 
-data AttackingMoveData = AttackingMoveData {pieceUnderAttack :: PieceType }
+data AttackingMoveData = AttackingMoveData {pieceUnderAttack :: PieceType}
 
 startingBoard :: Board
 startingBoard = undefined
@@ -101,21 +95,21 @@ postMoveStatus :: Player -> Board -> Status
 postMoveStatus player board = case finishedStatus of
   Just Checkmate -> Finished (Winner player)
   Just Stalemate -> Finished Draw
-  Nothing -> Playing board
+  Nothing -> Playing
   where
     finishedStatus = if noLegalMoves then Just (if kingIsUnderAttack then Checkmate else Stalemate) else Nothing
       where
         noLegalMoves = null $ legalMoves (other player) board
-        kingIsUnderAttack = King `elem` piecesUnderAttack 
+        kingIsUnderAttack = King `elem` piecesUnderAttack
           where
             piecesUnderAttack = pieceUnderAttack <$> attackingMoves player board where
-              
+
 legalMoves :: Player -> Board -> [Move]
-legalMoves player board = (map AttackingMove (attackingMoves player board) ++ map NonAttackingMove (nonAttackingMoves player board)) 
+legalMoves player board = (map AttackingMove (attackingMoves player board) ++ map NonAttackingMove (nonAttackingMoves player board))
 
 nonAttackingMoves :: Player -> Board -> [NonAttackingMoveData]
-nonAttackingMoves player board = do 
-  (piece, fromSpace) <- pieces player board 
+nonAttackingMoves player board = do
+  (piece, fromSpace) <- pieces player board
   lineOfMovement <- linesOfMovement piece fromSpace
   toSpace <- nonAttackingMovementOnBoard lineOfMovement
   return $ NonAttackingMoveData fromSpace toSpace
@@ -132,8 +126,9 @@ linesOfMovement (Piece player pieceType) = case pieceType of
   King -> map singleton . kingMoves
   Queen -> queenLines
 
-attackingMoves player board = pieces player board >>= uncurry linesOfAttack >>= (maybeToList . attackingMoveOnBoard) where
-  attackingMoveOnBoard spaces = AttackingMoveData <$> (firstJust (pieceAt board) spaces >>= enemyPiece player)
+attackingMoves player board = pieces player board >>= uncurry linesOfAttack >>= (maybeToList . attackingMoveOnBoard)
+  where
+    attackingMoveOnBoard spaces = AttackingMoveData <$> (firstJust (pieceAt board) spaces >>= enemyPiece player)
 
 linesOfAttack :: Piece -> Space -> [[Space]]
 linesOfAttack (Piece player Pawn) = map singleton . pawnAttacks player
@@ -146,35 +141,45 @@ pawnLine Black (file, Seven) = map (file,) [Six, Five]
 pawnLine Black (file, rank) = [(file, pred rank)]
 
 pawnAttacks :: Player -> Space -> [Space]
-pawnAttacks player space = filter (pawnAttack space) allSpaces where
-  pawnAttack (f1, r1) (f2, r2) = movementIsOneForward && movementIsOneToTheSide where
-    movementIsOneForward = (rankDiff == 1 && player == White) || (rankDiff == -1 && player == Black) where
-      rankDiff = fromEnum r2 - fromEnum r1
-    movementIsOneToTheSide = absFileDiff == 1 where
-      absFileDiff = abs $ fromEnum f2 - fromEnum f1
+pawnAttacks player space = filter (pawnAttack space) allSpaces
+  where
+    pawnAttack (f1, r1) (f2, r2) = movementIsOneForward && movementIsOneToTheSide
+      where
+        movementIsOneForward = (rankDiff == 1 && player == White) || (rankDiff == -1 && player == Black)
+          where
+            rankDiff = fromEnum r2 - fromEnum r1
+        movementIsOneToTheSide = absFileDiff == 1
+          where
+            absFileDiff = abs $ fromEnum f2 - fromEnum f1
 
 knightMoves :: Space -> [Space]
-knightMoves space = filter (knightMove space) allSpaces where
-  knightMove x y = distances' == (1, 2) || distances' == (2, 1) where
-    distances' = distances x y
+knightMoves space = filter (knightMove space) allSpaces
+  where
+    knightMove x y = distances' == (1, 2) || distances' == (2, 1)
+      where
+        distances' = distances x y
 
-distances (f1, r1) (f2, r2) = (f1 `distance` f2, r1 `distance` r2) where
-  distance x y = abs $ fromEnum x - fromEnum y
+distances (f1, r1) (f2, r2) = (f1 `distance` f2, r1 `distance` r2)
+  where
+    distance x y = abs $ fromEnum x - fromEnum y
 
 bishopLines :: Space -> [[Space]]
-bishopLines space = map (lineExtendingFrom space) diagonalDirections where
-  diagonalDirections = (,) <$> np <*> np
+bishopLines space = map (lineExtendingFrom space) diagonalDirections
+  where
+    diagonalDirections = (,) <$> np <*> np
 
 queenLines :: Space -> [[Space]]
 queenLines space = bishopLines space ++ rookLines space
 
 rookLines :: Space -> [[Space]]
-rookLines space = map (lineExtendingFrom space) orthogonalDirections where
-  orthogonalDirections = map (,0) np ++ map (0,) np 
+rookLines space = map (lineExtendingFrom space) orthogonalDirections
+  where
+    orthogonalDirections = map (,0) np ++ map (0,) np
 
 kingMoves :: Space -> [Space]
-kingMoves space = filter (kingMove space) allSpaces where
-  kingMove x y = uncurry max (distances x y) == 1 
+kingMoves space = filter (kingMove space) allSpaces
+  where
+    kingMove x y = uncurry max (distances x y) == 1
 
 lineExtendingFrom :: Space -> (Int, Int) -> [Space]
 lineExtendingFrom (file, rank) (fileIncrement, rankIncrement) = enumFromByIncrement file fileIncrement `zip` enumFromByIncrement rank rankIncrement
@@ -182,8 +187,9 @@ lineExtendingFrom (file, rank) (fileIncrement, rankIncrement) = enumFromByIncrem
 np = [-1, 1]
 
 enumFromByIncrement :: (Enum a, Bounded a) => a -> Int -> [a]
-enumFromByIncrement a p = map toEnum [i, i + p .. (fromEnum (maxBound `asTypeOf` a))] where
-  i = fromEnum a
+enumFromByIncrement a p = map toEnum [i, i + p .. (fromEnum (maxBound `asTypeOf` a))]
+  where
+    i = fromEnum a
 
 allSpaces :: [Space]
 allSpaces = (,) <$> files <*> ranks
@@ -214,16 +220,49 @@ applyMove board (NonAttackingMove values) = undefined
 applyMove board (AttackingMove values) = undefined
 
 play :: Monad f => GetMove f -> f Result
-play getMove = play' White startingBoard where
-  play' player board = do
-    newState <- playMove player
-    case newState of
-      Playing newBoard -> play' (nextPlayer player) newBoard
-      Finished result -> return result
-    where
-      playMove player = postMoveStatus player <$> applyMove board <$> getMove player board
-      nextPlayer = other
+play getMove = play' White startingBoard
+  where
+    play' player board = do
+      (status, newBoard) <- playMove player
+      case status of
+        Playing -> play' (nextPlayer player) newBoard
+        Finished result -> return result
+      where
+        playMove player = etc <$> getMove player board
+          where
+            etc move = (status, newBoard)
+              where
+                newBoard = applyMove board move
+                status = postMoveStatus player $ newBoard
+        nextPlayer = other
 
 firstJust :: (a -> Maybe b) -> [a] -> Maybe b
 firstJust f = getFirst . foldMap (First . f)
 
+data Tree a = Leaf | Branch (Tree a) a (Tree a) deriving Show
+
+insertBin :: Ord a => a -> Tree a -> Tree a
+insertBin x Leaf = Branch Leaf x Leaf
+insertBin x (Branch l t r) =
+  if x < t
+    then
+      if size l < size r
+        then Branch (insertBin x l) t r
+        else uncurry Branch (reorderMax x l) (insertBin t r) 
+    else
+      if size l > size r
+        then Branch l t (insertBin x r)
+        else uncurry (Branch (insertBin t l)) (reorderMin x r)
+  where
+    reorderMax x = foldr f (Leaf, x) 
+    reorderMin x = foldr f' (x, Leaf) 
+    f a (t, x) = (insertBin (a `min` x) t, a `max` x)
+    f' a (x, t) = (a `min` x, insertBin (a `max` x) t)
+
+instance Foldable Tree where
+  foldr _ a Leaf = a
+  foldr f a (Branch l x r) = foldr f (f x (foldr f a r)) l
+
+size :: Tree a -> Int
+size Leaf = 0
+size (Branch l _ r) = size l + 1 + size r
