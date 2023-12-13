@@ -1,3 +1,4 @@
+{-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE TupleSections #-}
 {-# LANGUAGE NoImplicitPrelude #-}
 
@@ -111,15 +112,14 @@ nonAttackingMoves :: Player -> Board -> [NonAttackingMoveData]
 nonAttackingMoves player board = do
   (piece, fromSpace) <- pieces player board
   lineOfMovement <- linesOfMovement piece fromSpace
-  toSpace <- nonAttackingMovementOnBoard lineOfMovement
+  toSpace <- takeWhile unoccupied lineOfMovement
   return $ NonAttackingMoveData fromSpace toSpace
   where
-    nonAttackingMovementOnBoard spaces = takeWhile unoccupied spaces
     unoccupied space = isNothing $ pieceAt board space
 
 linesOfMovement :: Piece -> Space -> [[Space]]
 linesOfMovement (Piece player pieceType) = case pieceType of
-  Pawn -> singleton . pawnLine player
+  Pawn -> singleton . pawnMoves player
   Knight -> map singleton . knightMoves
   Bishop -> bishopLines
   Rook -> rookLines
@@ -134,11 +134,13 @@ linesOfAttack :: Piece -> Space -> [[Space]]
 linesOfAttack (Piece player Pawn) = map singleton . pawnAttacks player
 linesOfAttack piece = linesOfMovement piece
 
-pawnLine :: Player -> Space -> [Space]
-pawnLine White (file, Two) = map (file,) [Three, Four]
-pawnLine White (file, rank) = [(file, succ rank)]
-pawnLine Black (file, Seven) = map (file,) [Six, Five]
-pawnLine Black (file, rank) = [(file, pred rank)]
+pawnMoves :: Player -> Space -> [Space]
+pawnMoves = traverse . pawnRanks
+  where
+    pawnRanks White Two = [Three, Four]
+    pawnRanks White rank = [succ rank]
+    pawnRanks Black Seven = [Six, Five]
+    pawnRanks Black rank = [pred rank]
 
 pawnAttacks :: Player -> Space -> [Space]
 pawnAttacks player space = filter (pawnAttack space) allSpaces
@@ -182,14 +184,16 @@ kingMoves space = filter (kingMove space) allSpaces
     kingMove x y = uncurry max (distances x y) == 1
 
 lineExtendingFrom :: Space -> (Int, Int) -> [Space]
-lineExtendingFrom (file, rank) (fileIncrement, rankIncrement) = enumFromByIncrement file fileIncrement `zip` enumFromByIncrement rank rankIncrement
+lineExtendingFrom (file, rank) (fileIncrement, rankIncrement) =
+  enumFromByIncrement file fileIncrement
+    `zip` enumFromByIncrement rank rankIncrement
 
 np = [-1, 1]
 
 enumFromByIncrement :: (Enum a, Bounded a) => a -> Int -> [a]
-enumFromByIncrement a p = map toEnum [i, i + p .. (fromEnum (maxBound `asTypeOf` a))]
+enumFromByIncrement a inc = map toEnum [init, init + inc .. fromEnum $ maxBound `asTypeOf` a]
   where
-    i = fromEnum a
+    init = fromEnum a
 
 allSpaces :: [Space]
 allSpaces = (,) <$> files <*> ranks
@@ -201,7 +205,10 @@ files :: [File]
 files = [A, B, C, D, E, F, G, H]
 
 pieces :: Player -> Board -> [(Piece, Space)]
-pieces = undefined
+pieces player board = do
+  space <- allSpaces
+  piece <- maybeToList $ Map.lookup space $ pieceMap board
+  return (piece, space)
 
 other :: Player -> Player
 other White = Black
@@ -238,31 +245,3 @@ play getMove = play' White startingBoard
 
 firstJust :: (a -> Maybe b) -> [a] -> Maybe b
 firstJust f = getFirst . foldMap (First . f)
-
-data Tree a = Leaf | Branch (Tree a) a (Tree a) deriving Show
-
-insertBin :: Ord a => a -> Tree a -> Tree a
-insertBin x Leaf = Branch Leaf x Leaf
-insertBin x (Branch l t r) =
-  if x < t
-    then
-      if size l < size r
-        then Branch (insertBin x l) t r
-        else uncurry Branch (reorderMax x l) (insertBin t r) 
-    else
-      if size l > size r
-        then Branch l t (insertBin x r)
-        else uncurry (Branch (insertBin t l)) (reorderMin x r)
-  where
-    reorderMax x = foldr f (Leaf, x) 
-    reorderMin x = foldr f' (x, Leaf) 
-    f a (t, x) = (insertBin (a `min` x) t, a `max` x)
-    f' a (x, t) = (a `min` x, insertBin (a `max` x) t)
-
-instance Foldable Tree where
-  foldr _ a Leaf = a
-  foldr f a (Branch l x r) = foldr f (f x (foldr f a r)) l
-
-size :: Tree a -> Int
-size Leaf = 0
-size (Branch l _ r) = size l + 1 + size r
