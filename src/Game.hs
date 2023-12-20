@@ -72,7 +72,7 @@ data NonAttackingMoveData = NonAttackingMoveData Space Space
 data AttackingMove = AttackingMove {pieceUnderAttack :: PieceType, attackingFrom :: Space, attackingTo :: Space}
 
 startingBoard :: Board
-startingBoard = Board $ Map.fromList $ do
+startingBoard = Map.fromList $ do
   (rank, player, pieceTypes) <- [(One, White, otherPieces), (Two, White, pawns), (Seven, Black, pawns), (Eight, Black, otherPieces)]
   (file, pieceType) <- files `zip` pieceTypes
   return ((file, rank), (player, pieceType))
