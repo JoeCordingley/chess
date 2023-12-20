@@ -1,11 +1,13 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE TupleSections #-}
 {-# LANGUAGE NoImplicitPrelude #-}
+{-# LANGUAGE RankNTypes #-}
 
 module Game where
 
 import Data.List (singleton)
 import qualified Data.Map as Map
+import Data.Map ((!))
 import Relude
 
 data Player
@@ -25,9 +27,7 @@ data EndStatus
   = Checkmate
   | Stalemate
 
-data Board = Board {pieceMap :: Map Space Piece}
-
--- = Space -> Maybe Piece
+type Board = Map Space Piece
 
 data Piece
   = Piece Player PieceType
@@ -66,11 +66,11 @@ data Rank
   | Eight
   deriving (Eq, Ord, Enum, Bounded, Show)
 
-data Move = AttackingMove AttackingMoveData | NonAttackingMove NonAttackingMoveData
+data Move = Move { fromSpace :: Space, toSpace :: Space}
 
 data NonAttackingMoveData = NonAttackingMoveData Space Space
 
-data AttackingMoveData = AttackingMoveData {pieceUnderAttack :: PieceType}
+data AttackingMove = AttackingMove {pieceUnderAttack :: PieceType, attackingFrom :: Space, attackingTo :: Space}
 
 startingBoard :: Board
 startingBoard = undefined
@@ -87,10 +87,17 @@ resultString Draw = "It's a draw"
 
 type GetMove f = Player -> Board -> f Move
 
-data PlacedPiece = PlacedPiece Piece Space deriving (Eq, Ord)
-
 getMoveCli :: GetMove IO
 getMoveCli = undefined
+
+prompt :: (String -> Maybe a) -> String -> IO a
+prompt f error = untilJustM $ getLine >>= ifNothing (putStrLn error) . f . toString
+
+untilJustM :: Monad f => f (Maybe a) -> f a
+untilJustM fa = fa >>= maybe (untilJustM fa) pure
+
+ifNothing :: Applicative f => f b -> Maybe a -> f (Maybe a)
+ifNothing f = maybe (Nothing <$ f) (pure . Just)
 
 postMoveStatus :: Player -> Board -> Status
 postMoveStatus player board = case finishedStatus of
@@ -106,14 +113,15 @@ postMoveStatus player board = case finishedStatus of
             piecesUnderAttack = pieceUnderAttack <$> attackingMoves player board where
 
 legalMoves :: Player -> Board -> [Move]
-legalMoves player board = (map AttackingMove (attackingMoves player board) ++ map NonAttackingMove (nonAttackingMoves player board))
+legalMoves player board = (map toMove (attackingMoves player board) ++ nonAttackingMoves player board) where
+  toMove attackingMove  = Move {fromSpace = attackingFrom attackingMove, toSpace = attackingTo attackingMove}
 
-nonAttackingMoves :: Player -> Board -> [NonAttackingMoveData]
+nonAttackingMoves :: Player -> Board -> [Move]
 nonAttackingMoves player board = do
   (piece, fromSpace) <- pieces player board
   lineOfMovement <- linesOfMovement piece fromSpace
   toSpace <- takeWhile unoccupied lineOfMovement
-  return $ NonAttackingMoveData fromSpace toSpace
+  return $ Move fromSpace toSpace
   where
     unoccupied space = isNothing $ pieceAt board space
 
@@ -126,9 +134,16 @@ linesOfMovement (Piece player pieceType) = case pieceType of
   King -> map singleton . kingMoves
   Queen -> queenLines
 
-attackingMoves player board = pieces player board >>= uncurry linesOfAttack >>= (maybeToList . attackingMoveOnBoard)
+attackingMoves :: Player -> Board -> [AttackingMove]
+attackingMoves player board = do
+  (piece, fromSpace) <- pieces player board 
+  spaces <- linesOfAttack piece fromSpace
+  maybeToList $ do
+    (toSpace, piece) <- firstJust (fmapSnd $ pieceAt board) spaces
+    attacking <- enemyPiece player piece
+    return $ AttackingMove {pieceUnderAttack = attacking, attackingFrom = fromSpace, attackingTo = toSpace}
   where
-    attackingMoveOnBoard spaces = AttackingMoveData <$> (firstJust (pieceAt board) spaces >>= enemyPiece player)
+    fmapSnd f a = (a,) <$> f a
 
 linesOfAttack :: Piece -> Space -> [[Space]]
 linesOfAttack (Piece player Pawn) = map singleton . pawnAttacks player
@@ -161,7 +176,10 @@ knightMoves space = filter (knightMove space) allSpaces
       where
         distances' = distances x y
 
-distances (f1, r1) (f2, r2) = (f1 `distance` f2, r1 `distance` r2)
+distances
+  :: (Enum a, Enum b) =>
+     (a, b) -> (a, b) -> (Int, Int)
+distances (a1, b1) (a2, b2) = (a1 `distance` a2, b1 `distance` b2)
   where
     distance x y = abs $ fromEnum x - fromEnum y
 
@@ -207,7 +225,7 @@ files = [A, B, C, D, E, F, G, H]
 pieces :: Player -> Board -> [(Piece, Space)]
 pieces player board = do
   space <- allSpaces
-  piece <- maybeToList $ Map.lookup space $ pieceMap board
+  piece <- maybeToList $ Map.lookup space board
   return (piece, space)
 
 other :: Player -> Player
@@ -215,7 +233,7 @@ other White = Black
 other Black = White
 
 pieceAt :: Board -> Space -> Maybe Piece
-pieceAt board space = Map.lookup space (pieceMap board)
+pieceAt board space = Map.lookup space board
 
 enemyPiece :: Player -> Piece -> Maybe PieceType
 enemyPiece ofPlayer (Piece player pieceType)
@@ -223,19 +241,20 @@ enemyPiece ofPlayer (Piece player pieceType)
   | otherwise = Nothing
 
 applyMove :: Board -> Move -> Board
-applyMove board (NonAttackingMove values) = undefined
-applyMove board (AttackingMove values) = undefined
+applyMove board move = Map.insert to (board ! from) (Map.delete from board) where
+  to = toSpace move
+  from = fromSpace move
 
 play :: Monad f => GetMove f -> f Result
 play getMove = play' White startingBoard
   where
     play' player board = do
-      (status, newBoard) <- playMove player
+      (status, newBoard) <- playMove
       case status of
         Playing -> play' (nextPlayer player) newBoard
         Finished result -> return result
       where
-        playMove player = etc <$> getMove player board
+        playMove = etc <$> getMove player board
           where
             etc move = (status, newBoard)
               where
