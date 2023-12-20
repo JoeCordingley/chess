@@ -29,9 +29,8 @@ data Board = Board {pieceMap :: Map Space Piece}
 
 -- = Space -> Maybe Piece
 
-data Piece
-  = Piece Player PieceType
-  deriving (Eq, Ord)
+type Piece
+  = (Player, PieceType) 
 
 data PieceType
   = King
@@ -73,7 +72,13 @@ data NonAttackingMoveData = NonAttackingMoveData Space Space
 data AttackingMoveData = AttackingMoveData {pieceUnderAttack :: PieceType}
 
 startingBoard :: Board
-startingBoard = undefined
+startingBoard = Board $ Map.fromList $ do
+  (rank, player, pieceTypes) <- [(One, White, otherPieces), (Two, White, pawns), (Seven, Black, pawns), (Eight, Black, otherPieces)]
+  (file, pieceType) <- files `zip` pieceTypes
+  return ((file, rank), (player, pieceType))
+  where
+    pawns = replicate 8 Pawn
+    otherPieces = [Rook, Knight, Bishop, Queen, King, Bishop, Knight, Rook]
 
 start :: IO ()
 start = play getMoveCli >>= printResult
@@ -118,7 +123,7 @@ nonAttackingMoves player board = do
     unoccupied space = isNothing $ pieceAt board space
 
 linesOfMovement :: Piece -> Space -> [[Space]]
-linesOfMovement (Piece player pieceType) = case pieceType of
+linesOfMovement (player, pieceType) = case pieceType of
   Pawn -> singleton . pawnMoves player
   Knight -> map singleton . knightMoves
   Bishop -> bishopLines
@@ -131,7 +136,7 @@ attackingMoves player board = pieces player board >>= uncurry linesOfAttack >>= 
     attackingMoveOnBoard spaces = AttackingMoveData <$> (firstJust (pieceAt board) spaces >>= enemyPiece player)
 
 linesOfAttack :: Piece -> Space -> [[Space]]
-linesOfAttack (Piece player Pawn) = map singleton . pawnAttacks player
+linesOfAttack (player, Pawn) = map singleton . pawnAttacks player
 linesOfAttack piece = linesOfMovement piece
 
 pawnMoves :: Player -> Space -> [Space]
@@ -218,7 +223,7 @@ pieceAt :: Board -> Space -> Maybe Piece
 pieceAt board space = Map.lookup space (pieceMap board)
 
 enemyPiece :: Player -> Piece -> Maybe PieceType
-enemyPiece ofPlayer (Piece player pieceType)
+enemyPiece ofPlayer (player, pieceType)
   | player == other ofPlayer = Just pieceType
   | otherwise = Nothing
 
