@@ -2,7 +2,7 @@ module Lib
 where
 
 import Relude
-import Prelude (read)
+import Prelude (read, interact)
 import Data.Char (isDigit)
 
 type Parser = StateT String Maybe
@@ -16,14 +16,14 @@ pureIf :: Alternative f => Bool -> a -> f a
 pureIf True = pure
 pureIf False = const empty
 
-char :: Parser Char
-char = StateT uncons
+anyChar :: Parser Char
+anyChar = StateT uncons
 
 ifChar :: (Char -> Bool) -> Parser Char
-ifChar p = char >>= lift . guarded p
+ifChar p = anyChar >>= lift . guarded p
 
-thisChar :: Char -> Parser Char
-thisChar = ifChar . (==)
+char :: Char -> Parser Char
+char = ifChar . (==)
 
 digit :: Parser Char
 digit = ifChar isDigit
@@ -32,8 +32,29 @@ nat :: Parser Int
 nat = read <$> some digit
 
 int :: Parser Int
-int = thisChar '-' *> (negate <$> nat) <|> nat
+int = token $ neg <|> nat
 
+neg :: Parser Int
+neg = char '-' *> (negate <$> nat)
+
+
+whitespace :: Parser String
+whitespace = many $ char ' ' 
+
+token :: Parser a -> Parser a
+token p = whitespace *> p <* whitespace
+
+tokenChar :: Char -> Parser Char
+tokenChar = token . char
+
+expr :: Parser Int 
+expr = (+) <$> term <* (token . char) '+' <*> expr <|> term where
+
+term :: Parser Int
+term = (*) <$> factor <* (token . char) '*' <*> term  <|> factor 
+
+factor = (token . char) '(' *> expr <* (token . char) ')' <|> int
 
 someFunc :: IO ()
-someFunc = putStrLn "someFunc"
+someFunc = interact f where
+  f s = show $ parse expr s
