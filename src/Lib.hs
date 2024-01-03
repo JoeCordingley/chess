@@ -5,25 +5,16 @@ import Relude
 import Prelude (read, interact)
 import Data.Char (isDigit)
 
-type Parser = StateT String Maybe
+type Parser = StateT String []
 
---parse :: Parser a -> String -> Maybe a
---parse parser s = do
---  (a, remaining) <- runStateT parser s 
---  pureIf (null remaining) a 
-
-parse :: Parser a -> String -> Maybe (a, String)
+parse :: Parser a -> String -> [(a, String)]
 parse = runStateT 
 
---pureIf :: Alternative f => Bool -> a -> f a
---pureIf True = pure
---pureIf False = const empty
-
 eos :: Parser () 
-eos = void $ get >>= guarded null
+eos = get >>= guard . null
 
 anyChar :: Parser Char
-anyChar = StateT uncons
+anyChar = StateT $ maybeToList . uncons
 
 ifChar :: (Char -> Bool) -> Parser Char
 ifChar p = anyChar >>= lift . guarded p
@@ -34,15 +25,14 @@ char = ifChar . (==)
 digit :: Parser Char
 digit = ifChar isDigit
 
-nat :: Parser Int
+nat :: Read a => Parser a
 nat = read <$> some digit
 
-int :: Parser Int
-int = token $ neg <|> nat
+int :: (Num a, Read a) => Parser a
+int = neg <|> nat
 
-neg :: Parser Int
+neg :: (Num a, Read a) => Parser a
 neg = char '-' *> (negate <$> nat)
-
 
 whitespace :: Parser String
 whitespace = many $ char ' ' 
@@ -50,45 +40,32 @@ whitespace = many $ char ' '
 token :: Parser a -> Parser a
 token p = whitespace *> p <* whitespace
 
-tokenChar :: Char -> Parser Char
-tokenChar = token . char
-
---expr :: Parser Int 
---expr = (+) <$> term <* (token . char) '+' <*> expr <|> term where
-
-expr :: Parser Int 
+expr :: (Fractional a, Eq a, Read a) => Parser (Maybe a)
 expr = chainl term fun where
   fun = minus <|> plus
-  minus = (-) <$ char '-'
-  plus = (+) <$ char '+'
+  minus = liftA2 (-) <$ (token . char) '-'
+  plus = liftA2 (+) <$ (token . char) '+'
 
 chainl :: Parser a -> Parser (a -> a -> a) -> Parser a
 chainl p op = p >>= rest where
   rest x = do
     f <- op
-    p >>= rest . f x
-    <|> return x
-
-chainlMaybe :: Parser a -> Parser (a -> a -> Maybe a) -> Parser a
-chainlMaybe p op = p >>= rest where
-  rest x = do
-    f <- op
     y <- p
-    lift (f x y) >>= rest
+    rest $ f x y
     <|> return x
 
---term :: Parser Int
---term = (*) <$> factor <* (token . char) '*' <*> term  <|> factor 
+term :: (Fractional a, Eq a, Read a) => Parser (Maybe a)
+term = chainl factor $ liftA2 (*) <$ (token . char) '*' <|> divMaybe' <$ (token . char) '/' where
+  divMaybe' x y = join $ divMaybe <$> x <*> y 
 
-term :: Parser Int
-term = chainl factor $ (*) <$ char '*' <|> div <$ char '/' 
-
-factor = (token . char) '(' *> expr <* (token . char) ')' <|> int
+factor :: (Fractional a, Eq a, Read a) => Parser (Maybe a)
+factor = (token . char) '(' *> expr <* (token . char) ')' <|> fmap Just int
 
 someFunc :: IO ()
-someFunc = interact f where
-  f s = show $ parse expr s
+someFunc = interact $ show . parse expr 
 
+divMaybe :: (Fractional a, Eq a, Read a) => a -> a -> Maybe a 
+divMaybe x y = if y /= 0 then Just $ x / y else Nothing
   
 --pow :: Int -> Int -> Int
 --pow x 0 = 1

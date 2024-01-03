@@ -1,33 +1,65 @@
 {-# LANGUAGE NoImplicitPrelude #-}
 
-module Cli where
+module Cli (main) where
 
 import Relude hiding (readFile)
-import Game (play, GetMove, Board, Result(..), Player, PieceType, Space, Rank(..), File(..), Move(..), legalMoves, PieceType(..))
+import Game (play, GetMove, Board, Result(..), Player(..), PieceType, Space, Rank(..), File(..), Move(..), legalMoves, PieceType(..), ranks, files)
+import Data.Map (lookup)
 
-start :: IO ()
-start = play getMoveCli >>= printResult
+main :: IO ()
+main = play getMoveCli >>= printResult
 
 getMoveCli :: GetMove IO
 getMoveCli player board = do
-  putStrLn . show $ printedBoard board
+  printBoard board
   prompt (readValidMove player board) "not a valid move"
 
-printedBoard :: Board -> Text
-printedBoard = undefined
+interleave :: a -> [a] -> [a]
+interleave _ [] = []
+interleave _ [y] = [y]
+interleave x (y:ys) = y : x : interleave x ys
+
+printBoard :: Board -> IO ()
+printBoard board = traverse_ printRank $ reverse ranks where
+  printRank rank = putStrLn $ interleave ' ' $ concatMap (printSpace rank) files 
+  printSpace rank file = fromMaybe "." . fmap pieceString $ lookup (file, rank) board 
+  pieceString (White, King) = "K"
+  pieceString (White, Queen) = "Q"
+  pieceString (White, Rook) = "R"
+  pieceString (White, Bishop) = "B"
+  pieceString (White, Knight) = "N"
+  pieceString (White, Pawn) = "P"
+  pieceString (Black, King) = "k"
+  pieceString (Black, Queen) = "q"
+  pieceString (Black, Rook) = "r"
+  pieceString (Black, Bishop) = "b"
+  pieceString (Black, Knight) = "n"
+  pieceString (Black, Pawn) = "p"
+-- pieceString (White, King) = "♔"
+-- pieceString (White, Queen) = "♕"
+-- pieceString (White, Rook) = "♖"
+-- pieceString (White, Bishop) = "♗"
+-- pieceString (White, Knight) = "♘"
+-- pieceString (White, Pawn) = "♙"
+-- pieceString (Black, King) = "♚"
+-- pieceString (Black, Queen) = "♛"
+-- pieceString (Black, Rook) = "♜"
+-- pieceString (Black, Bishop) = "♝"
+-- pieceString (Black, Knight) = "♞"
+-- pieceString (Black, Pawn) = "♟︎"
 
 printResult :: Result -> IO ()
 printResult = putStrLn . resultString
 
 prompt :: (Text -> Maybe a) -> String -> IO a
-prompt f error = untilJustM $ getLine >>= ifNothing (putStrLn error) . f 
+prompt f msg = untilJustM $ getLine >>= ifNothing (putStrLn msg) . f 
 
 untilJustM :: Monad f => f (Maybe a) -> f a
 untilJustM fa = fa >>= maybe (untilJustM fa) pure
 
 readValidMove :: Player -> Board -> Text -> Maybe Move
-readValidMove player board = readMove . toString >=> disambiguate where
-  disambiguate writtenMove = singletonMaybe . filter (isMove writtenMove) $ legalMoves player board where
+readValidMove player board = singletonMaybe . (readMove . toString >=> disambiguate) where
+  disambiguate writtenMove = filter (isMove writtenMove) $ legalMoves player board where
     isMove (pieceType, maybeOriginFile, maybeOriginRank, isCapture', destination) move = 
       movePiece move == pieceType && 
       isCapture' == (isCapture move) && 
@@ -35,31 +67,31 @@ readValidMove player board = readMove . toString >=> disambiguate where
       all ((==) (fst . fromSpace $ move)) maybeOriginFile  &&
       all ((==) (snd . fromSpace $ move)) maybeOriginRank 
 
-readMove :: String -> Maybe (PieceType, Maybe File, Maybe Rank, Bool, Space)
+readMove :: String -> [(PieceType, Maybe File, Maybe Rank, Bool, Space)]
 readMove text = evalStateT parse text where
   parse = (,,,,) <$> parsePiece <*> parseFileMaybe <*> parseRankMaybe <*> parseCapture <*> parseSpace <* eos
+  parseRankMaybe = parseMaybe parseRank
+  parseCapture = True <$ char 'x' <|> return False
+  parseFileMaybe = parseMaybe parseFile
+  parseSpace = (,) <$> parseFile <*> parseRank
   parsePiece = collectChar readPiece <|> return Pawn
   parseFile = collectChar readFile
   parseRank = collectChar readRank
-  parseRankMaybe = parseMaybe parseRank
-  parseFileMaybe = parseMaybe parseFile
-  parseSpace = (,) <$> parseFile <*> parseRank
-  parseCapture = True <$ char 'x' <|> return False
 
-collectChar :: (Char -> Maybe a) -> Parser a
-collectChar f = anyChar >>= lift . f
+collectChar :: (Char -> Maybe b) -> Parser b
+collectChar f = anyChar >>= lift . maybeToList . f
 
 char :: Char -> Parser Char
 char = ifChar . (==)
 
 anyChar :: Parser Char
-anyChar = StateT uncons
+anyChar = StateT $ maybeToList . uncons
 
 ifChar :: (Char -> Bool) -> Parser Char
 ifChar p = anyChar >>= lift . guarded p
 
 readPiece :: Char -> Maybe PieceType
-readPiece char = case char of
+readPiece c = case c of
   'K' -> Just King
   'Q' -> Just Queen
   'R' -> Just Rook
@@ -68,7 +100,7 @@ readPiece char = case char of
   _  -> Nothing
 
 readRank :: Char -> Maybe Rank
-readRank char = case char of
+readRank c = case c of
   '1' -> Just One
   '2' -> Just Two
   '3' -> Just Three
@@ -80,18 +112,18 @@ readRank char = case char of
   _ -> Nothing
 
 readFile :: Char -> Maybe File
-readFile char = case char of
-  'A' -> Just A
-  'B' -> Just B
-  'C' -> Just C
-  'D' -> Just D
-  'E' -> Just E
-  'F' -> Just F
-  'G' -> Just G
-  'H' -> Just H
+readFile c = case c of
+  'a' -> Just A
+  'b' -> Just B
+  'c' -> Just C
+  'd' -> Just D
+  'e' -> Just E
+  'f' -> Just F
+  'g' -> Just G
+  'h' -> Just H
   _ -> Nothing
 
-type Parser = StateT String Maybe
+type Parser = StateT String []
 
 eos :: Parser () 
 eos = void $ get >>= guarded null
@@ -99,6 +131,7 @@ eos = void $ get >>= guarded null
 parseMaybe :: Parser a -> Parser (Maybe a)
 parseMaybe s = Just <$> s <|> return Nothing
 
+singletonMaybe :: [a] -> Maybe a
 singletonMaybe [a] = Just a
 singletonMaybe _ = Nothing
 

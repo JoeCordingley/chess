@@ -3,7 +3,7 @@
 {-# LANGUAGE NoImplicitPrelude #-}
 {-# LANGUAGE RankNTypes #-}
 
-module Game (play, GetMove, Board, Result(..), Player, Space, Rank(..), File(..), Move(..), legalMoves, PieceType(..)) where
+module Game (play, GetMove, Board, Result(..), Player(..), Space, Rank(..), File(..), Move(..), legalMoves, PieceType(..), ranks, files, startingBoard) where
 
 import Data.List (singleton)
 import qualified Data.Map as Map
@@ -39,7 +39,7 @@ data PieceType
   | Bishop
   | Queen
   | Pawn
-  deriving (Eq, Ord)
+  deriving (Eq, Ord, Show)
 
 type Space = (File, Rank)
 
