@@ -7,6 +7,7 @@ import Data.Char (isDigit)
 
 type Parser = StateT String []
 
+
 parse :: Parser a -> String -> [(a, String)]
 parse = runStateT 
 
@@ -119,3 +120,9 @@ fib = fib' 0 1 1 0 where
     else if n `mod` 2 == 0 then fib' (p*p + q*q) (q*q + double(p*q)) a b (halve n)
     else fib' p q (b*q+a*q+a*p) (b*p+a*q) (n-1)
     
+isPrime :: Int -> Bool     
+isPrime n = all (\p -> n `mod` p /= 0) $ takeWhile (\p -> p*p <= n) primes 
+
+primes :: [Int]
+primes = 2 : (filter isPrime [3..])
+
